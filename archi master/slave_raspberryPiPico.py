@@ -187,3 +187,4 @@ while True:
     control_lamp()
     
     time.sleep(0.01)  # 10ms loop
+
