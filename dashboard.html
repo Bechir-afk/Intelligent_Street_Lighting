@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Smart City • Dashboard</title>
+
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root{
+      --blur: blur(18px);
+      --r: 22px;
+      --stroke: rgba(255,255,255,.16);
+      --card: rgba(255,255,255,.08);
+      --card2: rgba(0,0,0,.24);
+      --p1:#7c3aed; --p2:#22d3ee; --p3:#fb7185; --p4:#a3e635;
+      --shadow: 0 20px 60px rgba(0,0,0,.55);
+      --txt: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.70);
+    }
+
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      color: var(--txt);
+      overflow:hidden;
+      cursor:none;
+      background:
+        radial-gradient(1200px 800px at 15% 20%, rgba(124,58,237,.35), transparent 60%),
+        radial-gradient(1100px 900px at 85% 30%, rgba(34,211,238,.22), transparent 60%),
+        radial-gradient(900px 700px at 60% 85%, rgba(251,113,133,.22), transparent 60%),
+        linear-gradient(180deg, #05060b, #06081a 40%, #05060b);
+    }
+
+    .grid{
+      position:fixed; inset:-2px; z-index:-2; opacity:.55;
+      background:
+        linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px);
+      background-size: 64px 64px;
+      transform: perspective(700px) rotateX(55deg) translateY(-130px);
+      transform-origin: top;
+      filter: blur(.25px);
+      pointer-events:none;
+      animation: gridFloat 10s ease-in-out infinite;
+    }
+    @keyframes gridFloat{
+      0%,100%{ transform: perspective(700px) rotateX(55deg) translateY(-140px) translateX(0); opacity:.45; }
+      50%{ transform: perspective(700px) rotateX(55deg) translateY(-115px) translateX(-20px); opacity:.62; }
+    }
+
+    .noise{
+      position:fixed; inset:0; z-index:-1;
+      opacity:.08;
+      mix-blend-mode:overlay;
+      pointer-events:none;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.7'/%3E%3C/svg%3E");
+      background-size:160px 160px;
+      animation: noiseShift 2.2s steps(2,end) infinite;
+    }
+    @keyframes noiseShift{
+      0%{transform:translate3d(0,0,0)}
+      100%{transform:translate3d(-20px,15px,0)}
+    }
+
+    /* === Custom cursor (PC only) === */
+    .cursor, .cursor2{ pointer-events:none; }
+    .cursor{
+      position:fixed; left:0; top:0;
+      width:18px; height:18px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.35);
+      background: rgba(255,255,255,.10);
+      mix-blend-mode: screen;
+      z-index:2000;
+      transform: translate(-50%,-50%);
+      box-shadow: 0 0 18px rgba(34,211,238,.35);
+      opacity:0;
+    }
+    .cursor2{
+      position:fixed; left:0; top:0;
+      width:44px; height:44px;
+      border-radius:999px;
+      border:1px dashed rgba(255,255,255,.22);
+      z-index:1999;
+      transform: translate(-50%,-50%);
+      opacity:0;
+      filter: drop-shadow(0 0 18px rgba(124,58,237,.20));
+    }
+    @media (hover: none) and (pointer: coarse){
+      body{ cursor:auto; }
+      .cursor,.cursor2{ display:none; }
+    }
+
+    .shell{
+      max-width: 1320px;
+      margin:0 auto;
+      padding: 16px;
+      height:100vh;
+      overflow:auto;
+    }
+    .shell{ scrollbar-width: none; }
+    .shell::-webkit-scrollbar{ width:0; height:0; }
+
+    .topbar{
+      display:flex; justify-content:space-between; align-items:center;
+      gap:12px; flex-wrap:wrap;
+      margin-bottom:12px;
+    }
+    .title h1{margin:0; font-size:22px}
+    .muted{color:var(--muted); line-height:1.5}
+    .status{font-size:13px; color:rgba(255,255,255,.78); margin-top:4px}
+    .ok{ color: rgba(163,230,53,.95) !important; }
+    .warn{ color: rgba(251,191,36,.95) !important; }
+
+    .pill{
+      display:inline-flex; align-items:center; gap:10px;
+      padding:10px 12px; border-radius:999px;
+      border:1px solid var(--stroke);
+      background:rgba(0,0,0,.26);
+      font-weight:800;
+    }
+
+    .btn{
+      padding:10px 12px;
+      border-radius:14px;
+      cursor:pointer;
+      border:1px solid rgba(255,255,255,.18);
+      background: rgba(255,255,255,.06);
+      color: var(--txt);
+      font-weight:900;
+      transition:.18s transform ease, .18s filter ease;
+    }
+    .btn:hover{transform:translateY(-1px); filter:saturate(1.12)}
+    .btnPrimary{
+      background: linear-gradient(90deg, rgba(34,211,238,.22), rgba(124,58,237,.22), rgba(251,113,133,.18));
+    }
+
+    .card{
+      border-radius: var(--r);
+      background: var(--card);
+      border:1px solid var(--stroke);
+      backdrop-filter: var(--blur);
+      box-shadow: var(--shadow);
+      padding:14px;
+      position:relative;
+      overflow:hidden;
+    }
+    .card::before{
+      content:"";
+      position:absolute; inset:-2px; z-index:-1;
+      background: conic-gradient(from 170deg,
+        rgba(124,58,237,.28),
+        rgba(34,211,238,.22),
+        rgba(251,113,133,.18),
+        rgba(163,230,53,.14),
+        rgba(124,58,237,.28));
+      filter: blur(18px);
+      opacity:.55;
+    }
+
+    .kpis{
+      display:grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap:10px;
+    }
+    @media (max-width: 980px){ .kpis{grid-template-columns:1fr} }
+
+    .kpi{
+      border-radius:18px;
+      padding:12px;
+      background:var(--card2);
+      border:1px solid var(--stroke);
+    }
+    .kpi .t{color:rgba(255,255,255,.72); font-size:12px}
+    .kpi b{display:block; margin-top:6px; font-size:20px}
+
+    .grid2{
+      margin-top:14px;
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:14px;
+    }
+    @media (max-width: 980px){ .grid2{grid-template-columns:1fr} }
+
+    canvas{
+      background:rgba(0,0,0,.18);
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:18px;
+      padding:10px;
+    }
+
+    /* Lamps (agrandie) */
+    .lampRow{
+      display:flex; justify-content:space-between; align-items:center;
+      gap:14px; flex-wrap:wrap;
+      border-radius:22px;
+      padding:18px;
+      background:var(--card2);
+      border:1px solid var(--stroke);
+      margin-top:12px;
+    }
+    .lampLeft{display:flex; align-items:center; gap:14px; min-width: 280px;}
+    .lampEmoji{
+      font-size:34px;
+      line-height:1;
+      filter: drop-shadow(0 0 16px rgba(255,255,255,.12));
+      transition: transform .2s ease, filter .2s ease;
+    }
+    .lampEmoji[data-on="1"]{
+      transform: scale(1.06);
+      filter: drop-shadow(0 0 18px rgba(163,230,53,.45));
+    }
+    .lampMeta b{display:block; font-size:18px;}
+    .lampMeta .muted{font-size:13px}
+
+    .lampBtns{display:flex; gap:10px; flex-wrap:wrap}
+    .btnMini{
+      padding:11px 14px;
+      border-radius:14px;
+      font-weight:900;
+    }
+
+    .log{
+      border-radius:18px;
+      background:var(--card2);
+      border:1px solid var(--stroke);
+      padding:10px;
+      max-height: 320px;
+      overflow:auto;
+    }
+    .logItem{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size:12px;
+      padding:7px 0;
+      border-bottom:1px dashed rgba(255,255,255,.12);
+      color:rgba(255,255,255,.78);
+    }
+
+    .sectionTitle{
+      margin:0 0 10px;
+      font-size:16px;
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      flex-wrap:wrap;
+    }
+
+    .glowLine{
+      height:1px; margin:12px 0;
+      background: linear-gradient(90deg, transparent, rgba(34,211,238,.45), rgba(124,58,237,.45), transparent);
+      opacity:.75;
+    }
+  </style>
+
+  <script type="module">
+    // ======= MQTT topics =======
+    const MQTT_URL = "wss://broker.hivemq.com:8884/mqtt";
+
+    const TOPIC_TEMP  = "master/temp";
+    const TOPIC_HUM   = "master/hum";
+    const TOPIC_LIGHT = "master/light"; // attend "Dark"/"Light" (ou dark/light)
+
+    const LAMPS = [1,2,3,4];
+    const topicCmd    = (id)=> `turn/led${id}`;     // publish: "1" / "0" / "AUTO"
+    const topicStatus = (id)=> `slave/led${id}`;    // reçoit: "1"/"0" ou "ON"/"OFF"
+
+    const $ = (id)=>document.getElementById(id);
+
+    function getSession(){
+      try{ return JSON.parse(localStorage.getItem("smartcity_session")||"null"); }catch{ return null; }
+    }
+    function requireSession(){
+      const s = getSession();
+      if(!s){ location.href="./login.html"; return null; }
+      return s;
+    }
+
+    const state = {
+      temp:null, hum:null, light:"Unknown",
+      lampMode:{1:"AUTO",2:"AUTO",3:"AUTO",4:"AUTO"}, // "ON" | "OFF" | "AUTO"
+      lampStatus:{1:"UNKNOWN",2:"UNKNOWN",3:"UNKNOWN",4:"UNKNOWN"}, // "ON" | "OFF" | "UNKNOWN"
+      mqtt:null
+    };
+
+    const MAX_POINTS = 120;
+    const labels = [];
+    const tempData = [];
+    const humData = [];
+    let chartT, chartH;
+
+    function normLight(v){
+      const s = String(v||"").trim().toLowerCase();
+      if(s === "dark" || s === "night" || s === "0") return "Dark";
+      if(s === "light" || s === "day" || s === "1") return "Light";
+      return String(v||"Unknown").trim() || "Unknown";
+    }
+
+    function statusToOnOff(v){
+      const s = String(v||"").trim().toUpperCase();
+      if(s === "1" || s === "ON" || s === "TRUE") return "ON";
+      if(s === "0" || s === "OFF" || s === "FALSE") return "OFF";
+      return "UNKNOWN";
+    }
+
+    function modeToPayload(mode){
+      // ce que tu as demandé:
+      // ON => "1", OFF => "0", AUTO => "AUTO"
+      if(mode === "ON") return "1";
+      if(mode === "OFF") return "0";
+      return "AUTO";
+    }
+
+    function lightToAutoPayload(light){
+      // en AUTO, si Dark => 1, si Light => 0
+      if(light === "Dark") return "1";
+      if(light === "Light") return "0";
+      return null;
+    }
+
+    function setStatus(txt, cls=""){
+      $("status").textContent = txt;
+      $("status").className = "status " + cls;
+    }
+
+    function nowLabel(){
+      const d = new Date();
+      return d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    }
+    function pushPoint(t,h){
+      labels.push(nowLabel());
+      tempData.push(t);
+      humData.push(h);
+      if(labels.length > MAX_POINTS){ labels.shift(); tempData.shift(); humData.shift(); }
+      chartT.update("none");
+      chartH.update("none");
+    }
+
+    function renderKPIs(){
+      $("k_temp").textContent = state.temp==null ? "--" : `${state.temp.toFixed(1)} °C`;
+      $("k_hum").textContent  = state.hum==null  ? "--" : `${state.hum.toFixed(1)} %`;
+      $("k_light").textContent = state.light;
+
+      for(const id of LAMPS){
+        const emoji = $("lamp_emoji_"+id);
+        const txt = $("lamp_txt_"+id);
+        const mode = state.lampMode[id];
+
+        // état effectif: priorité au STATUS du slave si reçu, sinon on déduit
+        let effective = state.lampStatus[id];
+        if(effective !== "ON" && effective !== "OFF"){
+          if(mode === "ON") effective = "ON";
+          else if(mode === "OFF") effective = "OFF";
+          else if(mode === "AUTO"){
+            effective = (state.light === "Dark") ? "ON" : (state.light === "Light") ? "OFF" : "UNKNOWN";
+          }else{
+            effective = "UNKNOWN";
+          }
+        }
+
+        const isOn = (effective === "ON");
+        emoji.dataset.on = isOn ? "1" : "0";
+        emoji.textContent = isOn ? "💡" : "💤";
+
+        const autoInfo = (mode === "AUTO" && (state.light === "Dark" || state.light === "Light"))
+          ? ` • capteur=${state.light}`
+          : "";
+
+        txt.textContent = `Mode: ${mode} • État: ${effective}${autoInfo}`;
+      }
+    }
+
+    function makeLog(text){
+      const el = document.createElement("div");
+      el.className = "logItem";
+      el.textContent = `[${new Date().toLocaleTimeString("fr-FR")}] ${text}`;
+      return el;
+    }
+
+    function publishLamp(id, payload, reason=""){
+      if(!state.mqtt) return;
+      state.mqtt.publish(topicCmd(id), payload);
+      $("log").prepend(makeLog(`${reason} publish ${topicCmd(id)} = ${payload}`));
+    }
+
+    function connectMQTT(){
+      setStatus("Connexion MQTT…");
+      const client = mqtt.connect(MQTT_URL, { clientId: "WEB_DASH_" + Math.random().toString(16).slice(2) });
+      state.mqtt = client;
+
+      client.on("connect", ()=>{
+        setStatus("MQTT connecté ✅", "ok");
+        client.subscribe([TOPIC_TEMP, TOPIC_HUM, TOPIC_LIGHT, ...LAMPS.map(topicStatus)]);
+      });
+
+      client.on("message", (topic, payload)=>{
+        const msg = payload.toString().trim();
+
+        if(topic === TOPIC_TEMP){
+          const v = parseFloat(msg);
+          if(!Number.isNaN(v)) state.temp = v;
+        }
+        if(topic === TOPIC_HUM){
+          const v = parseFloat(msg);
+          if(!Number.isNaN(v)) state.hum = v;
+        }
+        if(topic === TOPIC_LIGHT){
+          state.light = normLight(msg);
+
+          // AUTO indépendant par lampe
+          const autoPayload = lightToAutoPayload(state.light);
+          if(autoPayload != null){
+            for(const id of LAMPS){
+              if(state.lampMode[id] === "AUTO"){
+                publishLamp(id, autoPayload, "AUTO →");
+              }
+            }
+          }
+        }
+
+        for(const id of LAMPS){
+          if(topic === topicStatus(id)){
+            const st = statusToOnOff(msg);
+            if(st === "ON" || st === "OFF"){
+              state.lampStatus[id] = st;
+              $("log").prepend(makeLog(`STATUS ← ${topic} = ${st} (raw:${msg})`));
+            }
+          }
+        }
+
+        renderKPIs();
+
+        if(state.temp != null && state.hum != null){
+          pushPoint(state.temp, state.hum);
+        }
+      });
+
+      client.on("error", e=>{
+        setStatus("Erreur MQTT : " + e.message, "warn");
+      });
+    }
+
+    function setLampMode(id, mode){
+      state.lampMode[id] = mode;
+
+      if(mode === "ON" || mode === "OFF"){
+        publishLamp(id, modeToPayload(mode), "MANUAL →");
+      }
+
+      if(mode === "AUTO"){
+        // envoyer AUTO tout de suite + appliquer selon light si connu
+        publishLamp(id, "AUTO", "MODE →");
+        const p = lightToAutoPayload(state.light);
+        if(p != null) publishLamp(id, p, "AUTO(init) →");
+      }
+
+      // on remet UNKNOWN si on passe en manual? (optionnel)
+      if(mode === "ON" || mode === "OFF") state.lampStatus[id] = "UNKNOWN";
+
+      renderKPIs();
+    }
+
+    function initCharts(){
+      const ctxT = document.getElementById("chartTemp");
+      const ctxH = document.getElementById("chartHum");
+
+      chartT = new Chart(ctxT, {
+        type:"line",
+        data:{ labels, datasets:[{ label:"Température (°C)", data: tempData, tension:.28 }]},
+        options:{
+          responsive:true, animation:false,
+          plugins:{ legend:{ labels:{ color:"rgba(255,255,255,.8)" } } },
+          scales:{
+            x:{ ticks:{ color:"rgba(255,255,255,.6)" }, grid:{ color:"rgba(255,255,255,.08)" } },
+            y:{ ticks:{ color:"rgba(255,255,255,.6)" }, grid:{ color:"rgba(255,255,255,.08)" } }
+          }
+        }
+      });
+
+      chartH = new Chart(ctxH, {
+        type:"line",
+        data:{ labels, datasets:[{ label:"Humidité (%)", data: humData, tension:.28 }]},
+        options:{
+          responsive:true, animation:false,
+          plugins:{ legend:{ labels:{ color:"rgba(255,255,255,.8)" } } },
+          scales:{
+            x:{ ticks:{ color:"rgba(255,255,255,.6)" }, grid:{ color:"rgba(255,255,255,.08)" } },
+            y:{ ticks:{ color:"rgba(255,255,255,.6)" }, grid:{ color:"rgba(255,255,255,.08)" } }
+          }
+        }
+      });
+    }
+
+    function logout(){
+      localStorage.removeItem("smartcity_session");
+      location.href="./index.html";
+    }
+
+    function initCursor(){
+      const canHover = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+      if(!canHover) return;
+
+      const c1 = document.getElementById("cursor");
+      const c2 = document.getElementById("cursor2");
+      if(!c1 || !c2) return;
+
+      let mx=innerWidth/2, my=innerHeight/2, cx=mx, cy=my, cx2=mx, cy2=my;
+
+      c1.style.opacity = "1";
+      c2.style.opacity = "1";
+
+      window.addEventListener("pointermove", (e)=>{ mx = e.clientX; my = e.clientY; }, {passive:true});
+
+      (function loop(){
+        cx  += (mx - cx)  * 0.22;
+        cy  += (my - cy)  * 0.22;
+        cx2 += (mx - cx2) * 0.10;
+        cy2 += (my - cy2) * 0.10;
+
+        c1.style.left = cx + "px";  c1.style.top = cy + "px";
+        c2.style.left = cx2 + "px"; c2.style.top = cy2 + "px";
+        requestAnimationFrame(loop);
+      })();
+    }
+
+    window.addEventListener("DOMContentLoaded", ()=>{
+      const s = requireSession();
+      if(!s) return;
+
+      $("who").textContent = `${s.name || "Worker"} • ID: ${s.uid || "?"}`;
+
+      initCursor();
+      initCharts();
+      connectMQTT();
+      renderKPIs();
+
+      $("logout").addEventListener("click", logout);
+
+      for(const id of LAMPS){
+        document.getElementById(`btn_on_${id}`).addEventListener("click", ()=>setLampMode(id,"ON"));
+        document.getElementById(`btn_off_${id}`).addEventListener("click", ()=>setLampMode(id,"OFF"));
+        document.getElementById(`btn_auto_${id}`).addEventListener("click", ()=>setLampMode(id,"AUTO"));
+      }
+    });
+  </script>
+</head>
+
+<body>
+  <div class="grid"></div>
+  <div class="noise"></div>
+  <div class="cursor" id="cursor"></div>
+  <div class="cursor2" id="cursor2"></div>
+
+  <div class="shell">
+    <div class="topbar">
+      <div class="title">
+        <h1>Dashboard Smart City</h1>
+        <div id="status" class="status">Initialisation…</div>
+      </div>
+
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+        <div class="pill">👷 <span id="who">--</span></div>
+        <button class="btn btnPrimary" id="logout">Logout</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="sectionTitle">
+        <div><b>Temps réel</b> <span class="muted">• MQTT</span></div>
+      </div>
+
+      <div class="kpis">
+        <div class="kpi"><div class="t">Température</div><b id="k_temp">--</b></div>
+        <div class="kpi"><div class="t">Humidité</div><b id="k_hum">--</b></div>
+        <div class="kpi"><div class="t">Lumière (LDR)</div><b id="k_light">--</b></div>
+      </div>
+
+      <div class="glowLine"></div>
+
+      <div class="grid2">
+        <div>
+          <div class="sectionTitle"><b>Courbe Température</b></div>
+          <canvas id="chartTemp" height="140"></canvas>
+        </div>
+        <div>
+          <div class="sectionTitle"><b>Courbe Humidité</b></div>
+          <canvas id="chartHum" height="140"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="sectionTitle"><b>Contrôle des lampes</b><span class="muted">publish: ON=1 • OFF=0 • AUTO=AUTO</span></div>
+
+      <div class="lampRow">
+        <div class="lampLeft">
+          <div class="lampEmoji" id="lamp_emoji_1" data-on="0">💤</div>
+          <div class="lampMeta">
+            <b>Lamp 1</b>
+            <div class="muted" id="lamp_txt_1">Mode: AUTO • État: --</div>
+          </div>
+        </div>
+        <div class="lampBtns">
+          <button class="btn btnMini" id="btn_on_1">ON</button>
+          <button class="btn btnMini" id="btn_off_1">OFF</button>
+          <button class="btn btnMini btnPrimary" id="btn_auto_1">AUTO</button>
+        </div>
+      </div>
+
+      <div class="lampRow">
+        <div class="lampLeft">
+          <div class="lampEmoji" id="lamp_emoji_2" data-on="0">💤</div>
+          <div class="lampMeta">
+            <b>Lamp 2</b>
+            <div class="muted" id="lamp_txt_2">Mode: AUTO • État: --</div>
+          </div>
+        </div>
+        <div class="lampBtns">
+          <button class="btn btnMini" id="btn_on_2">ON</button>
+          <button class="btn btnMini" id="btn_off_2">OFF</button>
+          <button class="btn btnMini btnPrimary" id="btn_auto_2">AUTO</button>
+        </div>
+      </div>
+
+      <div class="lampRow">
+        <div class="lampLeft">
+          <div class="lampEmoji" id="lamp_emoji_3" data-on="0">💤</div>
+          <div class="lampMeta">
+            <b>Lamp 3</b>
+            <div class="muted" id="lamp_txt_3">Mode: AUTO • État: --</div>
+          </div>
+        </div>
+        <div class="lampBtns">
+          <button class="btn btnMini" id="btn_on_3">ON</button>
+          <button class="btn btnMini" id="btn_off_3">OFF</button>
+          <button class="btn btnMini btnPrimary" id="btn_auto_3">AUTO</button>
+        </div>
+      </div>
+
+      <div class="lampRow">
+        <div class="lampLeft">
+          <div class="lampEmoji" id="lamp_emoji_4" data-on="0">💤</div>
+          <div class="lampMeta">
+            <b>Lamp 4</b>
+            <div class="muted" id="lamp_txt_4">Mode: AUTO • État: --</div>
+          </div>
+        </div>
+        <div class="lampBtns">
+          <button class="btn btnMini" id="btn_on_4">ON</button>
+          <button class="btn btnMini" id="btn_off_4">OFF</button>
+          <button class="btn btnMini btnPrimary" id="btn_auto_4">AUTO</button>
+        </div>
+      </div>
+
+      <div class="glowLine"></div>
+      <div class="sectionTitle"><b>Logs temps réel</b></div>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+</body>
+</html>

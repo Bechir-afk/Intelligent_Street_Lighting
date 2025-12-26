@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Smart City • Login</title>
+
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+  <style>
+    .cursor,.cursor2{opacity:0;}
+    body{ cursor:none; }
+
+    *,*::before,*::after{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      color:rgba(255,255,255,.92);
+      overflow:hidden;
+      background:
+        radial-gradient(1200px 800px at 15% 20%, rgba(124,58,237,.35), transparent 60%),
+        radial-gradient(1100px 900px at 85% 30%, rgba(34,211,238,.22), transparent 60%),
+        radial-gradient(900px 700px at 60% 85%, rgba(251,113,133,.22), transparent 60%),
+        linear-gradient(180deg, #05060b, #06081a 40%, #05060b);
+    }
+    :root{
+      --blur: blur(18px);
+      --r: 26px;
+      --stroke: rgba(255,255,255,.16);
+      --card: rgba(255,255,255,.08);
+      --card2: rgba(0,0,0,.24);
+      --p1:#7c3aed; --p2:#22d3ee; --p3:#fb7185; --p4:#a3e635;
+      --shadow: 0 20px 60px rgba(0,0,0,.55);
+    }
+
+    .grid{
+      position:fixed; inset:-2px; z-index:-2; opacity:.55;
+      background:
+        linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px);
+      background-size: 64px 64px;
+      transform: perspective(700px) rotateX(55deg) translateY(-130px);
+      transform-origin: top;
+      filter: blur(.25px);
+      pointer-events:none;
+      animation: gridFloat 10s ease-in-out infinite;
+    }
+    @keyframes gridFloat{
+      0%,100%{ transform: perspective(700px) rotateX(55deg) translateY(-140px) translateX(0); opacity:.45; }
+      50%{ transform: perspective(700px) rotateX(55deg) translateY(-115px) translateX(-20px); opacity:.62; }
+    }
+
+    .noise{
+      position:fixed; inset:0; z-index:-1;
+      opacity:.08;
+      mix-blend-mode:overlay;
+      pointer-events:none;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.7'/%3E%3C/svg%3E");
+      background-size:160px 160px;
+      animation: noiseShift 2.2s steps(2,end) infinite;
+    }
+    @keyframes noiseShift{
+      0%{transform:translate3d(0,0,0)}
+      100%{transform:translate3d(-20px,15px,0)}
+    }
+
+    .back{
+      position:fixed;
+      top:16px; left:16px;
+      padding:10px 12px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.28);
+      backdrop-filter: var(--blur);
+      text-decoration:none;
+      font-weight:800;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+      transition:.2s transform ease;
+      color:rgba(255,255,255,.92);
+    }
+    .back:hover{transform: translateY(-2px)}
+
+    .wrap{
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+    }
+
+    .card{
+      width:min(520px, 94vw);
+      border-radius: var(--r);
+      background: var(--card);
+      border:1px solid var(--stroke);
+      backdrop-filter: var(--blur);
+      box-shadow: var(--shadow);
+      padding:22px;
+      position:relative;
+      overflow:hidden;
+    }
+    .card::before{
+      content:"";
+      position:absolute; inset:-2px; z-index:-1;
+      background: conic-gradient(from 170deg,
+        rgba(124,58,237,.28),
+        rgba(34,211,238,.22),
+        rgba(251,113,133,.18),
+        rgba(163,230,53,.14),
+        rgba(124,58,237,.28));
+      filter: blur(18px);
+      opacity:.55;
+    }
+
+    .cursor{
+      position:fixed; left:0; top:0;
+      width:18px; height:18px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.35);
+      background: rgba(255,255,255,.10);
+      mix-blend-mode: screen;
+      pointer-events:none;
+      z-index:2000;
+      transform: translate(-50%,-50%);
+      box-shadow: 0 0 18px rgba(34,211,238,.35);
+    }
+    .cursor2{
+      position:fixed; left:0; top:0;
+      width:44px; height:44px;
+      border-radius:999px;
+      border:1px dashed rgba(255,255,255,.22);
+      pointer-events:none;
+      z-index:1999;
+      transform: translate(-50%,-50%);
+      opacity:.8;
+      filter: drop-shadow(0 0 18px rgba(124,58,237,.20));
+    }
+
+    .head{display:flex; align-items:center; gap:12px; margin-bottom:14px;}
+    .logo{
+      width:44px; height:44px; border-radius:16px;
+      background:
+        radial-gradient(circle at 30% 30%, rgba(255,255,255,.22), transparent 55%),
+        conic-gradient(from 220deg, var(--p2), var(--p1), var(--p3), var(--p4), var(--p2));
+      border:1px solid rgba(255,255,255,.20);
+      box-shadow: 0 0 24px rgba(124,58,237,.25), 0 0 42px rgba(34,211,238,.18);
+    }
+    h1{margin:0; font-size:20px; letter-spacing:.14em; text-transform:uppercase}
+    .sub{margin:2px 0 0; opacity:.7}
+
+    .tabs{
+      display:flex; gap:10px;
+      background: rgba(0,0,0,.18);
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:999px;
+      padding:6px;
+      margin: 12px 0 14px;
+    }
+    .tab{
+      flex:1;
+      padding:11px 12px;
+      border-radius:999px;
+      border:0;
+      cursor:pointer;
+      font-weight:900;
+      letter-spacing:.16em;
+      text-transform:uppercase;
+      background: transparent;
+      color:rgba(255,255,255,.78);
+      transition:.2s filter ease, .2s transform ease;
+    }
+    .tab.active{
+      color:rgba(255,255,255,.92);
+      background: linear-gradient(90deg, rgba(34,211,238,.30), rgba(124,58,237,.30));
+      box-shadow: 0 0 22px rgba(34,211,238,.12);
+    }
+
+    .panel{
+      border-radius:18px;
+      padding:18px;
+      background: var(--card2);
+      border:1px dashed rgba(255,255,255,.18);
+      text-align:center;
+    }
+
+    .rfidValue{
+      margin-top:10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size:22px;
+      letter-spacing:.55em;
+      opacity:.9;
+    }
+    .hint{margin:14px 0 0; opacity:.75}
+    .foot{margin-top:18px; opacity:.6; font-size:13px; text-align:center}
+
+    label{
+      display:block;
+      margin:12px 0 6px;
+      font-size:12px;
+      opacity:.72;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      text-align:left;
+    }
+    input{
+      width:100%;
+      padding:12px 12px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.16);
+      background:rgba(255,255,255,.06);
+      color:rgba(255,255,255,.92);
+      outline:none;
+    }
+    input:focus{
+      border-color: rgba(34,211,238,.38);
+      box-shadow: 0 0 0 3px rgba(34,211,238,.12);
+    }
+
+    .btn{
+      width:100%;
+      margin-top:12px;
+      padding:12px 14px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.18);
+      background: linear-gradient(90deg, rgba(34,211,238,.22), rgba(124,58,237,.22), rgba(251,113,133,.18));
+      color:rgba(255,255,255,.92);
+      font-weight:900;
+      cursor:pointer;
+      transition:.18s transform ease, .18s filter ease;
+    }
+    .btn:hover{transform:translateY(-1px); filter:saturate(1.12)}
+    .btn:disabled{opacity:.55; cursor:not-allowed; transform:none}
+
+    .status{margin-top:10px; font-size:13px; opacity:.82; text-align:center}
+    .ok{color: rgba(163,230,53,.95) !important;}
+    .warn{color: rgba(251,191,36,.95) !important;}
+    .hidden{display:none !important;}
+  </style>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+    import { getDatabase, ref, get, child } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+    import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCpe-nyiAE4o0c2rjWCokZsl1lb1SiM5FU",
+      authDomain: "smartcity-cf74e.firebaseapp.com",
+      databaseURL: "https://smartcity-cf74e-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "smartcity-cf74e",
+      storageBucket: "smartcity-cf74e.appspot.com",
+      messagingSenderId: "761756590340",
+      appId: "1:761756590340:web:06dc59526686a206d97051"
+    };
+
+    const app  = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db   = getDatabase(app);
+
+    const MQTT_URL   = "wss://broker.hivemq.com:8884/mqtt";
+    const TOPIC_RFID = "master/rfid";
+
+    const $ = (id)=>document.getElementById(id);
+
+    let client=null;
+    let lastUid="";
+
+    function setStatus(txt, cls=""){
+      $("status").textContent = txt;
+      $("status").className = "status " + cls;
+    }
+
+    async function tryLoginByRFID(uid){
+      try{
+        const snap = await get(child(ref(db), "workers"));
+        if(!snap.exists()){
+          setStatus("Aucun worker dans la base.", "warn");
+          return;
+        }
+
+        const workers = snap.val();
+        let foundKey = null;
+        let found = null;
+
+        for(const key of Object.keys(workers)){
+          const w = workers[key];
+          if(String(w.rfid || "").trim().toUpperCase() === uid){
+            foundKey = key;
+            found = w;
+            break;
+          }
+        }
+
+        if(!found){
+          setStatus("RFID non reconnu. Utilise Credentials.", "warn");
+          return;
+        }
+
+        localStorage.setItem("smartcity_session", JSON.stringify({
+          uid: foundKey,
+          name: found.name || "Worker",
+          rfid: found.rfid || uid,
+          role: found.role || "worker",
+          loginAt: Date.now()
+        }));
+
+        setStatus("RFID OK ✅ Redirection…", "ok");
+        setTimeout(()=> location.href="./dashboard.html", 650);
+
+      }catch(err){
+        setStatus("Erreur RTDB : " + (err?.message || "Erreur"), "warn");
+      }
+    }
+
+    function startRFID(){
+      if(client) return;
+      setStatus("Connexion MQTT…");
+      client = mqtt.connect(MQTT_URL, { clientId: "WEB_LOGIN_" + Math.random().toString(16).slice(2) });
+
+      client.on("connect", ()=>{
+        setStatus("MQTT connecté ✅ Scanne ton badge…", "ok");
+        client.subscribe(TOPIC_RFID);
+      });
+
+      client.on("message", async (topic, payload)=>{
+        if(topic !== TOPIC_RFID) return;
+        const uid = payload.toString().trim().toUpperCase();
+        if(!uid || uid === lastUid) return;
+        lastUid = uid;
+
+        $("rfidValue").textContent = uid.split("").join(" ");
+        $("rfidHint").textContent  = "Badge détecté. Vérification…";
+        await tryLoginByRFID(uid);
+      });
+
+      client.on("error",(e)=>{
+        setStatus("Erreur MQTT : " + e.message, "warn");
+      });
+    }
+
+    async function loginByPassword(e){
+      e.preventDefault();
+      const email = $("email").value.trim();
+      const pass  = $("pass").value;
+
+      $("btnLogin").disabled = true;
+      setStatus("Connexion…");
+
+      try{
+        const cred = await signInWithEmailAndPassword(auth, email, pass);
+        const uid  = cred.user.uid;
+
+        const userSnap = await get(child(ref(db), `workers/${uid}`));
+        if(!userSnap.exists()){
+          setStatus("Profil introuvable dans /workers (ajoute name/role/rfid).", "warn");
+          return;
+        }
+
+        const profile = userSnap.val();
+
+        localStorage.setItem("smartcity_session", JSON.stringify({
+          uid,
+          name: profile.name || cred.user.email,
+          role: profile.role || "worker",
+          rfid: profile.rfid || "",
+          email: cred.user.email,
+          loginAt: Date.now()
+        }));
+
+        setStatus("Login OK ✅ Redirection…", "ok");
+        setTimeout(()=> location.href="./dashboard.html", 550);
+
+      }catch(err){
+        setStatus("Login échoué : " + (err?.message || "Erreur"), "warn");
+      }finally{
+        $("btnLogin").disabled = false;
+      }
+    }
+
+    function setMode(mode){
+      $("tabRFID").classList.toggle("active", mode==="rfid");
+      $("tabCRED").classList.toggle("active", mode==="cred");
+      $("rfidBox").classList.toggle("hidden", mode!=="rfid");
+      $("credBox").classList.toggle("hidden", mode!=="cred");
+
+      if(mode==="rfid"){
+        $("rfidHint").textContent  = "Waiting for RFID…";
+        $("rfidValue").textContent = "— — — —";
+        startRFID();
+        setStatus("Mode RFID", "ok");
+      }else{
+        setStatus("Mode Credentials", "ok");
+      }
+      localStorage.setItem("smartcity_login_mode", mode);
+    }
+
+    window.addEventListener("DOMContentLoaded", ()=>{
+      $("tabRFID").addEventListener("click", ()=> setMode("rfid"));
+      $("tabCRED").addEventListener("click", ()=> setMode("cred"));
+      $("form").addEventListener("submit", loginByPassword);
+
+      const saved = localStorage.getItem("smartcity_login_mode") || "rfid";
+      setMode(saved);
+
+      // Double cursor
+      // === Double cursor (mouse + touch) ===
+const c1 = document.getElementById("cursor");
+const c2 = document.getElementById("cursor2");
+
+let mx=innerWidth/2, my=innerHeight/2, cx=mx, cy=my, cx2=mx, cy2=my;
+
+// afficher direct
+c1.style.opacity = "1";
+c2.style.opacity = "1";
+
+window.addEventListener("pointermove", (e)=>{
+  mx = e.clientX; my = e.clientY;
+  c1.style.opacity = "1";
+  c2.style.opacity = "1";
+}, {passive:true});
+
+(function cursorLoop(){
+  cx  += (mx - cx)  * 0.22;
+  cy  += (my - cy)  * 0.22;
+  cx2 += (mx - cx2) * 0.10;
+  cy2 += (my - cy2) * 0.10;
+
+  c1.style.left = cx + "px";  c1.style.top = cy + "px";
+  c2.style.left = cx2 + "px"; c2.style.top = cy2 + "px";
+  requestAnimationFrame(cursorLoop);
+})();
+
+    });
+  </script>
+</head>
+
+<body>
+  <div class="grid"></div>
+  <div class="noise"></div>
+  <div class="cursor" id="cursor"></div>
+  <div class="cursor2" id="cursor2"></div>
+
+  <a class="back" href="./index.html">← Retour</a>
+
+  <div class="wrap">
+    <section class="card">
+      <div class="head">
+        <div class="logo"></div>
+        <div>
+          <h1>LOGIN</h1>
+          <div class="sub">Secure Access</div>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" id="tabRFID" type="button">RFID</button>
+        <button class="tab" id="tabCRED" type="button">CREDENTIALS</button>
+      </div>
+
+      <div class="panel" id="rfidBox">
+        <div style="font-weight:900; letter-spacing:.04em; opacity:.92">Scan RFID card</div>
+        <div class="rfidValue" id="rfidValue">— — — —</div>
+        <div class="hint" id="rfidHint">Waiting for RFID…</div>
+      </div>
+
+      <div class="panel hidden" id="credBox">
+        <form id="form">
+          <label>Email</label>
+          <input id="email" type="email" placeholder="worker@smartcity.tn" required />
+          <label>Mot de passe</label>
+          <input id="pass" type="password" placeholder="••••••••" required />
+          <button class="btn" id="btnLogin" type="submit">Se connecter</button>
+        </form>
+      </div>
+
+      <div id="status" class="status">Initialisation…</div>
+      <div class="foot">Login Smart City 2025</div>
+    </section>
+  </div>
+</body>
+</html>
